@@ -52,6 +52,15 @@ function resolveSetupNames(lastNames: string[] | undefined): string[] {
   return ["", "", ""];
 }
 
+function resolveDiscussionRemainingSeconds(startedAt: number | undefined): number {
+  if (typeof startedAt !== "number" || !Number.isFinite(startedAt)) {
+    return DEFAULT_DISCUSSION_SECONDS;
+  }
+
+  const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+  return Math.max(0, DEFAULT_DISCUSSION_SECONDS - elapsedSeconds);
+}
+
 export default function Home() {
   const [state, dispatch] = useReducer(gameReducer, initialGameState);
 
@@ -107,28 +116,16 @@ export default function Home() {
       return;
     }
 
-    const resetTimerId = window.setTimeout(() => {
-      setRemainingDiscussionSeconds(DEFAULT_DISCUSSION_SECONDS);
-    }, 0);
+    const syncRemaining = () => {
+      const nextRemaining = resolveDiscussionRemainingSeconds(state.discussionStartedAt);
+      setRemainingDiscussionSeconds((prev) => (prev === nextRemaining ? prev : nextRemaining));
+    };
 
-    return () => window.clearTimeout(resetTimerId);
+    syncRemaining();
+    const timerId = window.setInterval(syncRemaining, 1000);
+
+    return () => window.clearInterval(timerId);
   }, [state.phase, state.discussionStartedAt]);
-
-  useEffect(() => {
-    if (state.phase !== "discussion") {
-      return;
-    }
-
-    if (remainingDiscussionSeconds <= 0) {
-      return;
-    }
-
-    const timerId = window.setTimeout(() => {
-      setRemainingDiscussionSeconds((prev) => Math.max(0, prev - 1));
-    }, 1000);
-
-    return () => window.clearTimeout(timerId);
-  }, [state.phase, remainingDiscussionSeconds]);
 
   const players = useMemo(() => state.config?.players ?? [], [state.config]);
 

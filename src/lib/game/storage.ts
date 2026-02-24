@@ -12,9 +12,123 @@ export interface StoredSnapshot {
 
 const SETTINGS_KEY = "liar-game:settings";
 const SNAPSHOT_KEY = "liar-game:snapshot";
+const PHASES = new Set(["setup", "roleReveal", "hintTurn", "discussion", "vote", "liarGuess", "result"]);
+const RESULT_REASONS = new Set(["wrong-vote", "liar-guessed-word", "liar-failed-guess"]);
 
 function hasStorage(): boolean {
   return typeof window !== "undefined" && !!window.localStorage;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isPlayer(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string"
+  );
+}
+
+function isRoundConfig(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    Array.isArray(value.players) &&
+    value.players.every(isPlayer) &&
+    typeof value.categoryId === "string" &&
+    value.liarCount === 1
+  );
+}
+
+function isSecretAssignment(value: unknown): boolean {
+  if (
+    !isObject(value) ||
+    typeof value.playerId !== "string" ||
+    (value.role !== "citizen" && value.role !== "liar")
+  ) {
+    return false;
+  }
+
+  if (value.word !== undefined && typeof value.word !== "string") {
+    return false;
+  }
+
+  if (value.role === "citizen" && typeof value.word !== "string") {
+    return false;
+  }
+
+  return true;
+}
+
+function isVoteBallot(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.voterId === "string" &&
+    typeof value.targetId === "string"
+  );
+}
+
+function isRoundResult(value: unknown): boolean {
+  if (
+    !isObject(value) ||
+    typeof value.votedPlayerId !== "string" ||
+    typeof value.wasLiarCaught !== "boolean" ||
+    (value.winner !== "citizens" && value.winner !== "liar") ||
+    typeof value.reason !== "string" ||
+    !RESULT_REASONS.has(value.reason)
+  ) {
+    return false;
+  }
+
+  return value.liarGuess === undefined || typeof value.liarGuess === "string";
+}
+
+function isGameState(value: unknown): value is GameState {
+  if (
+    !isObject(value) ||
+    typeof value.phase !== "string" ||
+    !PHASES.has(value.phase) ||
+    (value.config !== null && value.config !== undefined && !isRoundConfig(value.config)) ||
+    !Array.isArray(value.assignments) ||
+    !value.assignments.every(isSecretAssignment) ||
+    typeof value.currentTurnIndex !== "number" ||
+    !Number.isInteger(value.currentTurnIndex) ||
+    value.currentTurnIndex < 0 ||
+    !Array.isArray(value.ballots) ||
+    !value.ballots.every(isVoteBallot) ||
+    (value.voteRound !== 1 && value.voteRound !== 2) ||
+    !Array.isArray(value.eventLog) ||
+    !value.eventLog.every((entry) => typeof entry === "string")
+  ) {
+    return false;
+  }
+
+  if (value.discussionStartedAt !== undefined && typeof value.discussionStartedAt !== "number") {
+    return false;
+  }
+
+  if (value.eliminatedCandidateId !== undefined && typeof value.eliminatedCandidateId !== "string") {
+    return false;
+  }
+
+  if (value.result !== undefined && !isRoundResult(value.result)) {
+    return false;
+  }
+
+  if (
+    value.tieCandidateIds !== undefined &&
+    (!Array.isArray(value.tieCandidateIds) ||
+      !value.tieCandidateIds.every((candidateId) => typeof candidateId === "string"))
+  ) {
+    return false;
+  }
+
+  if (value.hostDecisionRequired !== undefined && typeof value.hostDecisionRequired !== "boolean") {
+    return false;
+  }
+
+  return true;
 }
 
 export function loadSettings(): StoredSettings | null {
@@ -62,7 +176,11 @@ export function loadSnapshot(): StoredSnapshot | null {
     }
 
     const parsed = JSON.parse(raw) as Partial<StoredSnapshot>;
-    if (typeof parsed.savedAt !== "number" || !parsed.gameState) {
+    if (
+      typeof parsed.savedAt !== "number" ||
+      !Number.isFinite(parsed.savedAt) ||
+      !isGameState(parsed.gameState)
+    ) {
       return null;
     }
 
