@@ -36,7 +36,7 @@ body {
   background: radial-gradient(circle at 20% 20%, #11203a 0%, var(--color-background) 42%),
     var(--color-background);
   color: var(--color-text);
-  font-family: var(--font-fira-sans), sans-serif;
+  font-family: "Fira Sans", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }
 
 button,
@@ -95,7 +95,7 @@ button:focus-visible {
 
 .title {
   margin: 0;
-  font-family: var(--font-fira-code), monospace;
+  font-family: "Fira Code", "JetBrains Mono", "Consolas", "Menlo", monospace;
   font-size: clamp(1.9rem, 4vw, 2.5rem);
   line-height: 1.2;
 }
@@ -115,7 +115,7 @@ button:focus-visible {
 
 .phase-title {
   margin: 0;
-  font-family: var(--font-fira-code), monospace;
+  font-family: "Fira Code", "JetBrains Mono", "Consolas", "Menlo", monospace;
   font-size: clamp(1.45rem, 3vw, 1.85rem);
 }
 
@@ -261,7 +261,7 @@ button:focus-visible {
 
 .timer {
   margin: var(--space-md) 0 0;
-  font-family: var(--font-fira-code), monospace;
+  font-family: "Fira Code", "JetBrains Mono", "Consolas", "Menlo", monospace;
   font-size: clamp(2rem, 7vw, 2.8rem);
   letter-spacing: 0.04em;
   color: var(--color-cta);
