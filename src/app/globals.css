@@ -1,26 +1,307 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-primary: #0f172a;
+  --color-secondary: #1e293b;
+  --color-cta: #22c55e;
+  --color-background: #020617;
+  --color-text: #f8fafc;
+  --color-muted: #94a3b8;
+  --color-border: #334155;
+  --color-danger: #f87171;
+
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px rgb(0 0 0 / 0.1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, #11203a 0%, var(--color-background) 42%),
+    var(--color-background);
+  color: var(--color-text);
+  font-family: "Fira Sans", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--color-cta);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.app-shell {
+  position: relative;
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+  padding: var(--space-xl) var(--space-md);
+}
+
+.background-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 75% 20%, rgb(34 197 94 / 0.16) 0%, rgb(2 6 23 / 0) 44%);
+}
+
+.content-wrap {
+  position: relative;
+  width: min(100%, 680px);
+  z-index: 1;
+}
+
+.panel {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 0.875rem;
+  background: linear-gradient(180deg, rgb(15 23 42 / 0.94), rgb(2 6 23 / 0.95));
+  box-shadow: var(--shadow-lg);
+  padding: clamp(1rem, 2.7vw, 2rem);
+}
+
+.title {
+  margin: 0;
+  font-family: "Fira Code", "JetBrains Mono", "Consolas", "Menlo", monospace;
+  font-size: clamp(1.9rem, 4vw, 2.5rem);
+  line-height: 1.2;
+}
+
+.subtitle,
+.phase-guide,
+.muted-text,
+.error-text {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.subtitle {
+  color: var(--color-muted);
+  margin-top: var(--space-sm);
+}
+
+.phase-title {
+  margin: 0;
+  font-family: "Fira Code", "JetBrains Mono", "Consolas", "Menlo", monospace;
+  font-size: clamp(1.45rem, 3vw, 1.85rem);
+}
+
+.result-winner {
+  margin: var(--space-sm) 0 0;
+  font-size: clamp(1.35rem, 2.8vw, 1.75rem);
+  font-weight: 700;
+  color: var(--color-cta);
+}
+
+.phase-guide {
+  margin-top: var(--space-sm);
+}
+
+.muted-text {
+  color: var(--color-muted);
+}
+
+.error-text {
+  color: var(--color-danger);
+}
+
+.field-label {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.stack-xs,
+.stack-sm,
+.stack-md {
+  display: grid;
+}
+
+.stack-xs {
+  gap: var(--space-xs);
+}
+
+.stack-sm {
+  gap: var(--space-sm);
+}
+
+.stack-md {
+  gap: var(--space-md);
+}
+
+.top-space-sm {
+  margin-top: var(--space-sm);
+}
+
+.top-space-lg {
+  margin-top: var(--space-lg);
+}
+
+.row-gap-sm {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 0.625rem;
+  background: rgb(15 23 42 / 0.75);
+  color: var(--color-text);
+  min-height: 2.75rem;
+  padding: 0.625rem 0.875rem;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.input:hover {
+  border-color: #3d4f69;
+}
+
+.btn-primary,
+.btn-secondary,
+.link-button {
+  cursor: pointer;
+  border-radius: 0.625rem;
+  border: 1px solid transparent;
+  min-height: 2.75rem;
+  padding: 0.625rem 1rem;
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease, opacity 180ms ease;
+}
+
+.btn-primary {
+  width: 100%;
+  background: var(--color-cta);
+  color: #021204;
+  font-weight: 700;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #29d164;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: var(--color-secondary);
+  color: var(--color-text);
+  border-color: var(--color-border);
+  font-weight: 600;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: #3d4f69;
+  background: #233452;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.secret-card {
+  margin-top: var(--space-lg);
+  border-radius: 0.875rem;
+  border: 1px solid #33527f;
+  background: rgb(2 6 23 / 0.8);
+  padding: var(--space-lg);
+}
+
+.secret-player {
+  margin: 0;
+  font-weight: 700;
+  color: var(--color-cta);
+}
+
+.secret-role,
+.secret-word {
+  margin: var(--space-sm) 0 0;
+  font-size: 1.05rem;
+}
+
+.timer {
+  margin: var(--space-md) 0 0;
+  font-family: "Fira Code", "JetBrains Mono", "Consolas", "Menlo", monospace;
+  font-size: clamp(2rem, 7vw, 2.8rem);
+  letter-spacing: 0.04em;
+  color: var(--color-cta);
+}
+
+.timer-end {
+  color: #f59e0b;
+}
+
+.grid-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-sm);
+}
+
+.section-small-title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--color-muted);
+}
+
+.log-list {
+  margin: var(--space-sm) 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.log-list li {
+  line-height: 1.4;
+}
+
+.link-button {
+  width: 100%;
+  background: transparent;
+  color: var(--color-muted);
+  border-color: var(--color-border);
+}
+
+.link-button:hover {
+  color: var(--color-text);
+  border-color: #4c627f;
 }
