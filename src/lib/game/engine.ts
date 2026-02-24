@@ -1,0 +1,141 @@
+import { pickOne, randomInt } from "@/lib/game/random";
+import { WORD_CATEGORIES, WORD_CATEGORY_MAP } from "@/lib/game/word-bank";
+import type {
+  GameState,
+  Player,
+  Role,
+  RoundConfig,
+  SecretAssignment,
+  VoteBallot,
+} from "@/lib/game/types";
+
+export const MIN_PLAYERS = 3;
+export const MAX_PLAYERS = 8;
+
+export function createPlayerId(index: number): string {
+  return `p-${Date.now().toString(36)}-${index}-${randomInt(100000)}`;
+}
+
+export function buildPlayers(names: string[]): Player[] {
+  return names.map((name, index) => ({
+    id: createPlayerId(index + 1),
+    name: name.trim(),
+  }));
+}
+
+export function validatePlayerNames(names: string[]): string | null {
+  const trimmed = names.map((name) => name.trim()).filter(Boolean);
+  if (trimmed.length < MIN_PLAYERS || trimmed.length > MAX_PLAYERS) {
+    return `플레이어는 ${MIN_PLAYERS}명 이상 ${MAX_PLAYERS}명 이하여야 합니다.`;
+  }
+
+  const unique = new Set(trimmed.map((name) => name.toLowerCase()));
+  if (unique.size !== trimmed.length) {
+    return "중복된 플레이어 이름은 사용할 수 없습니다.";
+  }
+
+  return null;
+}
+
+export function getCategoryById(categoryId: string) {
+  return WORD_CATEGORY_MAP.get(categoryId);
+}
+
+export function pickWordByCategory(categoryId: string): string {
+  const category = getCategoryById(categoryId) ?? WORD_CATEGORIES[0];
+  if (!category || category.words.length === 0) {
+    throw new Error("사용 가능한 단어가 없습니다.");
+  }
+
+  return pickOne(category.words);
+}
+
+export function createAssignments(players: Player[], word: string): SecretAssignment[] {
+  const liarIndex = randomInt(players.length);
+
+  return players.map((player, index) => {
+    const role: Role = index === liarIndex ? "liar" : "citizen";
+
+    return {
+      playerId: player.id,
+      role,
+      word: role === "citizen" ? word : undefined,
+    };
+  });
+}
+
+export function createInitialRoundState(params: {
+  players: Player[];
+  categoryId: string;
+}): GameState {
+  const config: RoundConfig = {
+    players: params.players,
+    categoryId: params.categoryId,
+    liarCount: 1,
+  };
+
+  const word = pickWordByCategory(params.categoryId);
+  const assignments = createAssignments(params.players, word);
+
+  return {
+    phase: "roleReveal",
+    config,
+    assignments,
+    currentTurnIndex: 0,
+    ballots: [],
+    voteRound: 1,
+    eventLog: ["새 라운드가 시작되었습니다."],
+  };
+}
+
+export function getLiarId(assignments: SecretAssignment[]): string | undefined {
+  return assignments.find((assignment) => assignment.role === "liar")?.playerId;
+}
+
+export function getCitizenWord(assignments: SecretAssignment[]): string | undefined {
+  return assignments.find((assignment) => assignment.role === "citizen")?.word;
+}
+
+export function tallyVotes(ballots: VoteBallot[]): Map<string, number> {
+  const result = new Map<string, number>();
+
+  for (const ballot of ballots) {
+    const prev = result.get(ballot.targetId) ?? 0;
+    result.set(ballot.targetId, prev + 1);
+  }
+
+  return result;
+}
+
+export function getTopVotedCandidates(votes: Map<string, number>): string[] {
+  let maxVote = 0;
+  let candidates: string[] = [];
+
+  for (const [candidateId, vote] of votes.entries()) {
+    if (vote > maxVote) {
+      maxVote = vote;
+      candidates = [candidateId];
+      continue;
+    }
+
+    if (vote === maxVote) {
+      candidates.push(candidateId);
+    }
+  }
+
+  return candidates;
+}
+
+export function normalizeWord(input: string): string {
+  return input.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+export const initialGameState: GameState = {
+  phase: "setup",
+  config: null,
+  assignments: [],
+  currentTurnIndex: 0,
+  ballots: [],
+  voteRound: 1,
+  eventLog: [],
+};
