@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages --dotfiles --nojekyll -d out"
   },
   "dependencies": {
     "next": "16.1.6",
