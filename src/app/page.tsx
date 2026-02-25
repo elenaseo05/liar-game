@@ -44,7 +44,7 @@ function formatRemaining(seconds: number): string {
 }
 
 function resolveSetupNames(lastNames: string[] | undefined): string[] {
-  const names = (lastNames ?? []).map((name) => name.trim()).filter(Boolean).slice(0, MAX_PLAYERS);
+  const names = (lastNames ?? []).map((name) => name.trim()).slice(0, MAX_PLAYERS);
   if (names.length >= MIN_PLAYERS) {
     return names;
   }
@@ -163,18 +163,18 @@ export default function Home() {
   };
 
   const handleStartGame = () => {
-    const trimmedNames = setupNames.map((name) => name.trim()).filter(Boolean);
-    const validationError = validatePlayerNames(trimmedNames);
+    const normalizedNames = setupNames.map((name) => name.trim()).slice(0, MAX_PLAYERS);
+    const validationError = validatePlayerNames(normalizedNames);
 
     if (validationError) {
       setSetupError(validationError);
       return;
     }
 
-    const playersForRound = buildPlayers(trimmedNames);
+    const playersForRound = buildPlayers(normalizedNames);
 
     saveSettings({
-      lastPlayerNames: trimmedNames,
+      lastPlayerNames: normalizedNames,
       lastCategoryId: selectedCategoryId,
     });
 

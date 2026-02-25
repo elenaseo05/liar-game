@@ -10,25 +10,43 @@ import type {
 } from "@/lib/game/types";
 
 export const MIN_PLAYERS = 3;
-export const MAX_PLAYERS = 8;
+export const MAX_PLAYERS = 15;
 
 export function createPlayerId(index: number): string {
   return `p-${Date.now().toString(36)}-${index}-${randomInt(100000)}`;
 }
 
 export function buildPlayers(names: string[]): Player[] {
-  return names.map((name, index) => ({
-    id: createPlayerId(index + 1),
-    name: name.trim(),
-  }));
+  const usedNames = new Set<string>();
+
+  return names.map((name, index) => {
+    const trimmedName = name.trim();
+    const defaultName = `플레이어 ${index + 1}`;
+    let resolvedName = trimmedName || defaultName;
+
+    if (!trimmedName) {
+      let suffix = 2;
+      while (usedNames.has(resolvedName.toLowerCase())) {
+        resolvedName = `${defaultName} (${suffix})`;
+        suffix += 1;
+      }
+    }
+
+    usedNames.add(resolvedName.toLowerCase());
+
+    return {
+      id: createPlayerId(index + 1),
+      name: resolvedName,
+    };
+  });
 }
 
 export function validatePlayerNames(names: string[]): string | null {
-  const trimmed = names.map((name) => name.trim()).filter(Boolean);
-  if (trimmed.length < MIN_PLAYERS || trimmed.length > MAX_PLAYERS) {
+  if (names.length < MIN_PLAYERS || names.length > MAX_PLAYERS) {
     return `플레이어는 ${MIN_PLAYERS}명 이상 ${MAX_PLAYERS}명 이하여야 합니다.`;
   }
 
+  const trimmed = names.map((name) => name.trim()).filter(Boolean);
   const unique = new Set(trimmed.map((name) => name.toLowerCase()));
   if (unique.size !== trimmed.length) {
     return "중복된 플레이어 이름은 사용할 수 없습니다.";
