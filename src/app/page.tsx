@@ -3,11 +3,17 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
 import {
   buildPlayers,
+  DEFAULT_CITIZEN_RATIO,
+  DEFAULT_LIAR_RATIO,
   getCitizenWord,
-  getLiarId,
+  getLiarIds,
   initialGameState,
   MAX_PLAYERS,
+  MAX_ROLE_RATIO,
   MIN_PLAYERS,
+  MIN_ROLE_RATIO,
+  resolveLiarCountByRatio,
+  validateRoleRatio,
   validatePlayerNames,
 } from "@/lib/game/engine";
 import { gameReducer } from "@/lib/game/reducer";
@@ -44,7 +50,7 @@ function formatRemaining(seconds: number): string {
 }
 
 function resolveSetupNames(lastNames: string[] | undefined): string[] {
-  const names = (lastNames ?? []).map((name) => name.trim()).filter(Boolean).slice(0, MAX_PLAYERS);
+  const names = (lastNames ?? []).map((name) => name.trim()).slice(0, MAX_PLAYERS);
   if (names.length >= MIN_PLAYERS) {
     return names;
   }
@@ -67,6 +73,8 @@ export default function Home() {
   const [hasBootstrapped, setHasBootstrapped] = useState(false);
   const [setupNames, setSetupNames] = useState<string[]>(["", "", ""]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(WORD_CATEGORIES[0].id);
+  const [citizenRatio, setCitizenRatio] = useState(DEFAULT_CITIZEN_RATIO);
+  const [liarRatio, setLiarRatio] = useState(DEFAULT_LIAR_RATIO);
   const [setupError, setSetupError] = useState<string | null>(null);
 
   const [isSecretVisible, setIsSecretVisible] = useState(false);
@@ -87,6 +95,15 @@ export default function Home() {
         );
         if (hasCategory) {
           setSelectedCategoryId(settings.lastCategoryId);
+        }
+
+        const ratioError = validateRoleRatio(
+          settings.lastCitizenRatio ?? DEFAULT_CITIZEN_RATIO,
+          settings.lastLiarRatio ?? DEFAULT_LIAR_RATIO,
+        );
+        if (!ratioError) {
+          setCitizenRatio(settings.lastCitizenRatio ?? DEFAULT_CITIZEN_RATIO);
+          setLiarRatio(settings.lastLiarRatio ?? DEFAULT_LIAR_RATIO);
         }
       }
 
@@ -128,10 +145,16 @@ export default function Home() {
   }, [state.phase, state.discussionStartedAt]);
 
   const players = useMemo(() => state.config?.players ?? [], [state.config]);
+  const setupPlayerCount = setupNames.length;
+  const previewLiarCount = useMemo(
+    () => resolveLiarCountByRatio(setupPlayerCount, citizenRatio, liarRatio),
+    [setupPlayerCount, citizenRatio, liarRatio],
+  );
+  const previewCitizenCount = Math.max(0, setupPlayerCount - previewLiarCount);
 
   const currentPlayer = players[state.currentTurnIndex];
-  const liarId = getLiarId(state.assignments);
-  const liarPlayer = players.find((player) => player.id === liarId);
+  const liarIds = getLiarIds(state.assignments);
+  const liarPlayers = players.filter((player) => liarIds.includes(player.id));
   const citizenWord = getCitizenWord(state.assignments);
 
   const eliminatedPlayer = players.find((player) => player.id === state.eliminatedCandidateId);
@@ -163,19 +186,33 @@ export default function Home() {
   };
 
   const handleStartGame = () => {
-    const trimmedNames = setupNames.map((name) => name.trim()).filter(Boolean);
-    const validationError = validatePlayerNames(trimmedNames);
+    const normalizedNames = setupNames.map((name) => name.trim()).slice(0, MAX_PLAYERS);
+    const ratioError = validateRoleRatio(citizenRatio, liarRatio);
+    if (ratioError) {
+      setSetupError(ratioError);
+      return;
+    }
+
+    const validationError = validatePlayerNames(normalizedNames);
 
     if (validationError) {
       setSetupError(validationError);
       return;
     }
 
-    const playersForRound = buildPlayers(trimmedNames);
+    const liarCount = resolveLiarCountByRatio(normalizedNames.length, citizenRatio, liarRatio);
+    if (liarCount < 1 || liarCount >= normalizedNames.length) {
+      setSetupError("현재 인원으로는 유효한 시민:라이어 비율을 만들 수 없습니다.");
+      return;
+    }
+
+    const playersForRound = buildPlayers(normalizedNames);
 
     saveSettings({
-      lastPlayerNames: trimmedNames,
+      lastPlayerNames: normalizedNames,
       lastCategoryId: selectedCategoryId,
+      lastCitizenRatio: citizenRatio,
+      lastLiarRatio: liarRatio,
     });
 
     dispatch({
@@ -183,6 +220,7 @@ export default function Home() {
       payload: {
         players: playersForRound,
         categoryId: selectedCategoryId,
+        liarCount,
       },
     });
 
@@ -253,6 +291,44 @@ export default function Home() {
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="stack-xs">
+          <span className="field-label">시민:라이어 비율</span>
+          <div className="ratio-row">
+            <input
+              className="input ratio-input"
+              type="number"
+              inputMode="numeric"
+              min={MIN_ROLE_RATIO}
+              max={MAX_ROLE_RATIO}
+              step={1}
+              value={citizenRatio}
+              onChange={(event) => {
+                const parsed = Number.parseInt(event.target.value, 10);
+                setCitizenRatio(Number.isInteger(parsed) ? parsed : MIN_ROLE_RATIO);
+              }}
+              aria-label="시민 비율"
+            />
+            <span className="ratio-separator">:</span>
+            <input
+              className="input ratio-input"
+              type="number"
+              inputMode="numeric"
+              min={MIN_ROLE_RATIO}
+              max={MAX_ROLE_RATIO}
+              step={1}
+              value={liarRatio}
+              onChange={(event) => {
+                const parsed = Number.parseInt(event.target.value, 10);
+                setLiarRatio(Number.isInteger(parsed) ? parsed : MIN_ROLE_RATIO);
+              }}
+              aria-label="라이어 비율"
+            />
+          </div>
+          <p className="muted-text">
+            현재 인원 기준 예상 배정: 시민 {previewCitizenCount}명 / 라이어 {previewLiarCount}명
+          </p>
         </label>
 
         {setupError ? <p className="error-text">{setupError}</p> : null}
@@ -471,7 +547,9 @@ export default function Home() {
 
         <div className="stack-sm top-space-lg">
           <p className="muted-text">지목된 플레이어: {eliminatedPlayer?.name ?? "알 수 없음"}</p>
-          <p className="muted-text">라이어: {liarPlayer?.name ?? "알 수 없음"}</p>
+          <p className="muted-text">
+            라이어: {liarPlayers.length > 0 ? liarPlayers.map((player) => player.name).join(", ") : "알 수 없음"}
+          </p>
           <p className="muted-text">제시어: {citizenWord ?? "알 수 없음"}</p>
           {result.liarGuess ? <p className="muted-text">라이어 추측: {result.liarGuess}</p> : null}
         </div>

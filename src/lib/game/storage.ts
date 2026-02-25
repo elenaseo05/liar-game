@@ -3,6 +3,8 @@ import type { GameState } from "@/lib/game/types";
 export interface StoredSettings {
   lastPlayerNames: string[];
   lastCategoryId: string;
+  lastCitizenRatio?: number;
+  lastLiarRatio?: number;
 }
 
 export interface StoredSnapshot {
@@ -37,7 +39,10 @@ function isRoundConfig(value: unknown): boolean {
     Array.isArray(value.players) &&
     value.players.every(isPlayer) &&
     typeof value.categoryId === "string" &&
-    value.liarCount === 1
+    typeof value.liarCount === "number" &&
+    Number.isInteger(value.liarCount) &&
+    value.liarCount >= 1 &&
+    value.liarCount < value.players.length
   );
 }
 
@@ -150,6 +155,14 @@ export function loadSettings(): StoredSettings | null {
     return {
       lastPlayerNames: parsed.lastPlayerNames.filter((name): name is string => typeof name === "string"),
       lastCategoryId: parsed.lastCategoryId,
+      lastCitizenRatio:
+        typeof parsed.lastCitizenRatio === "number" && Number.isInteger(parsed.lastCitizenRatio)
+          ? parsed.lastCitizenRatio
+          : undefined,
+      lastLiarRatio:
+        typeof parsed.lastLiarRatio === "number" && Number.isInteger(parsed.lastLiarRatio)
+          ? parsed.lastLiarRatio
+          : undefined,
     };
   } catch {
     return null;

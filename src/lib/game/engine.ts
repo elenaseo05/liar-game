@@ -10,28 +10,63 @@ import type {
 } from "@/lib/game/types";
 
 export const MIN_PLAYERS = 3;
-export const MAX_PLAYERS = 8;
+export const MAX_PLAYERS = 15;
+export const MIN_ROLE_RATIO = 1;
+export const MAX_ROLE_RATIO = 20;
+export const DEFAULT_CITIZEN_RATIO = 4;
+export const DEFAULT_LIAR_RATIO = 1;
 
 export function createPlayerId(index: number): string {
   return `p-${Date.now().toString(36)}-${index}-${randomInt(100000)}`;
 }
 
 export function buildPlayers(names: string[]): Player[] {
-  return names.map((name, index) => ({
-    id: createPlayerId(index + 1),
-    name: name.trim(),
-  }));
+  const usedNames = new Set<string>();
+
+  return names.map((name, index) => {
+    const trimmedName = name.trim();
+    const defaultName = `플레이어 ${index + 1}`;
+    let resolvedName = trimmedName || defaultName;
+    let suffix = 2;
+
+    while (usedNames.has(resolvedName.toLowerCase())) {
+      resolvedName = `${trimmedName || defaultName} (${suffix})`;
+      suffix += 1;
+    }
+
+    usedNames.add(resolvedName.toLowerCase());
+
+    return {
+      id: createPlayerId(index + 1),
+      name: resolvedName,
+    };
+  });
 }
 
 export function validatePlayerNames(names: string[]): string | null {
-  const trimmed = names.map((name) => name.trim()).filter(Boolean);
-  if (trimmed.length < MIN_PLAYERS || trimmed.length > MAX_PLAYERS) {
+  if (names.length < MIN_PLAYERS || names.length > MAX_PLAYERS) {
     return `플레이어는 ${MIN_PLAYERS}명 이상 ${MAX_PLAYERS}명 이하여야 합니다.`;
   }
 
+  const trimmed = names.map((name) => name.trim()).filter(Boolean);
   const unique = new Set(trimmed.map((name) => name.toLowerCase()));
   if (unique.size !== trimmed.length) {
     return "중복된 플레이어 이름은 사용할 수 없습니다.";
+  }
+
+  return null;
+}
+
+export function validateRoleRatio(citizenRatio: number, liarRatio: number): string | null {
+  if (
+    !Number.isInteger(citizenRatio) ||
+    !Number.isInteger(liarRatio) ||
+    citizenRatio < MIN_ROLE_RATIO ||
+    liarRatio < MIN_ROLE_RATIO ||
+    citizenRatio > MAX_ROLE_RATIO ||
+    liarRatio > MAX_ROLE_RATIO
+  ) {
+    return `시민:라이어 비율은 ${MIN_ROLE_RATIO}~${MAX_ROLE_RATIO} 사이의 정수로 입력해주세요.`;
   }
 
   return null;
@@ -50,11 +85,45 @@ export function pickWordByCategory(categoryId: string): string {
   return pickOne(category.words);
 }
 
-export function createAssignments(players: Player[], word: string): SecretAssignment[] {
-  const liarIndex = randomInt(players.length);
+export function resolveLiarCountByRatio(
+  playerCount: number,
+  citizenRatio: number,
+  liarRatio: number,
+): number {
+  if (playerCount <= 1) {
+    return 1;
+  }
+
+  const totalRatio = citizenRatio + liarRatio;
+  if (totalRatio <= 0) {
+    return 1;
+  }
+
+  const estimated = Math.round((playerCount * liarRatio) / totalRatio);
+  return Math.min(Math.max(estimated, 1), playerCount - 1);
+}
+
+function pickLiarIndices(playerCount: number, liarCount: number): Set<number> {
+  const cappedLiarCount = Math.min(Math.max(liarCount, 1), Math.max(1, playerCount - 1));
+  const indices = Array.from({ length: playerCount }, (_, index) => index);
+
+  for (let index = 0; index < cappedLiarCount; index += 1) {
+    const swapIndex = index + randomInt(playerCount - index);
+    [indices[index], indices[swapIndex]] = [indices[swapIndex], indices[index]];
+  }
+
+  return new Set(indices.slice(0, cappedLiarCount));
+}
+
+export function createAssignments(
+  players: Player[],
+  word: string,
+  liarCount: number,
+): SecretAssignment[] {
+  const liarIndices = pickLiarIndices(players.length, liarCount);
 
   return players.map((player, index) => {
-    const role: Role = index === liarIndex ? "liar" : "citizen";
+    const role: Role = liarIndices.has(index) ? "liar" : "citizen";
 
     return {
       playerId: player.id,
@@ -67,15 +136,21 @@ export function createAssignments(players: Player[], word: string): SecretAssign
 export function createInitialRoundState(params: {
   players: Player[];
   categoryId: string;
+  liarCount: number;
 }): GameState {
+  const resolvedLiarCount = Math.min(
+    Math.max(Math.trunc(params.liarCount), 1),
+    Math.max(1, params.players.length - 1),
+  );
+
   const config: RoundConfig = {
     players: params.players,
     categoryId: params.categoryId,
-    liarCount: 1,
+    liarCount: resolvedLiarCount,
   };
 
   const word = pickWordByCategory(params.categoryId);
-  const assignments = createAssignments(params.players, word);
+  const assignments = createAssignments(params.players, word, resolvedLiarCount);
 
   return {
     phase: "roleReveal",
@@ -88,8 +163,10 @@ export function createInitialRoundState(params: {
   };
 }
 
-export function getLiarId(assignments: SecretAssignment[]): string | undefined {
-  return assignments.find((assignment) => assignment.role === "liar")?.playerId;
+export function getLiarIds(assignments: SecretAssignment[]): string[] {
+  return assignments
+    .filter((assignment) => assignment.role === "liar")
+    .map((assignment) => assignment.playerId);
 }
 
 export function getCitizenWord(assignments: SecretAssignment[]): string | undefined {
