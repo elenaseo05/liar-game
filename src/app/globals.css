@@ -175,6 +175,21 @@ button:focus-visible {
   flex-wrap: wrap;
 }
 
+.ratio-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.ratio-input {
+  width: 7rem;
+}
+
+.ratio-separator {
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
 .section-title-row {
   display: flex;
   justify-content: space-between;

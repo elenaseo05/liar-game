@@ -1,7 +1,7 @@
 import {
   createInitialRoundState,
   getCitizenWord,
-  getLiarId,
+  getLiarIds,
   getTopVotedCandidates,
   initialGameState,
   normalizeWord,
@@ -16,6 +16,7 @@ export type GameAction =
       payload: {
         players: Player[];
         categoryId: string;
+        liarCount: number;
       };
     }
   | { type: "NEXT_ROLE_REVEAL" }
@@ -34,9 +35,9 @@ function appendEvent(state: GameState, message: string): string[] {
 function resolveVoteOutcome(state: GameState, eliminatedCandidateId: string): GameState {
   const players = state.config?.players ?? [];
   const eliminatedPlayer = players.find((player) => player.id === eliminatedCandidateId);
-  const liarId = getLiarId(state.assignments);
+  const liarIds = getLiarIds(state.assignments);
 
-  if (!liarId) {
+  if (liarIds.length === 0) {
     return {
       ...state,
       phase: "result",
@@ -51,7 +52,7 @@ function resolveVoteOutcome(state: GameState, eliminatedCandidateId: string): Ga
     };
   }
 
-  if (eliminatedCandidateId !== liarId) {
+  if (!liarIds.includes(eliminatedCandidateId)) {
     const result: RoundResult = {
       votedPlayerId: eliminatedCandidateId,
       wasLiarCaught: false,
@@ -162,6 +163,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return createInitialRoundState({
         players: action.payload.players,
         categoryId: action.payload.categoryId,
+        liarCount: action.payload.liarCount,
       });
     }
     case "NEXT_ROLE_REVEAL": {
@@ -277,6 +279,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return createInitialRoundState({
         players: state.config.players,
         categoryId: state.config.categoryId,
+        liarCount: state.config.liarCount,
       });
     }
     case "RESET_TO_SETUP": {

@@ -17,7 +17,7 @@ export interface Player {
 export interface RoundConfig {
   players: Player[];
   categoryId: string;
-  liarCount: 1;
+  liarCount: number;
 }
 
 export interface SecretAssignment {
