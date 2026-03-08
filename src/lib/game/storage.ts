@@ -5,6 +5,8 @@ export interface StoredSettings {
   lastCategoryId: string;
   lastCitizenRatio?: number;
   lastLiarRatio?: number;
+  customCategoryLabel?: string;
+  customKeywords?: string[];
 }
 
 export interface StoredSnapshot {
@@ -26,11 +28,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isPlayer(value: unknown): boolean {
-  return (
-    isObject(value) &&
-    typeof value.id === "string" &&
-    typeof value.name === "string"
-  );
+  return isObject(value) && typeof value.id === "string" && typeof value.name === "string";
 }
 
 function isRoundConfig(value: unknown): boolean {
@@ -42,16 +40,15 @@ function isRoundConfig(value: unknown): boolean {
     typeof value.liarCount === "number" &&
     Number.isInteger(value.liarCount) &&
     value.liarCount >= 1 &&
-    value.liarCount < value.players.length
+    value.liarCount < value.players.length &&
+    (value.customCategoryLabel === undefined || typeof value.customCategoryLabel === "string") &&
+    (value.customWords === undefined ||
+      (Array.isArray(value.customWords) && value.customWords.every((word) => typeof word === "string")))
   );
 }
 
 function isSecretAssignment(value: unknown): boolean {
-  if (
-    !isObject(value) ||
-    typeof value.playerId !== "string" ||
-    (value.role !== "citizen" && value.role !== "liar")
-  ) {
+  if (!isObject(value) || typeof value.playerId !== "string" || (value.role !== "citizen" && value.role !== "liar")) {
     return false;
   }
 
@@ -67,11 +64,7 @@ function isSecretAssignment(value: unknown): boolean {
 }
 
 function isVoteBallot(value: unknown): boolean {
-  return (
-    isObject(value) &&
-    typeof value.voterId === "string" &&
-    typeof value.targetId === "string"
-  );
+  return isObject(value) && typeof value.voterId === "string" && typeof value.targetId === "string";
 }
 
 function isRoundResult(value: unknown): boolean {
@@ -123,8 +116,7 @@ function isGameState(value: unknown): value is GameState {
 
   if (
     value.tieCandidateIds !== undefined &&
-    (!Array.isArray(value.tieCandidateIds) ||
-      !value.tieCandidateIds.every((candidateId) => typeof candidateId === "string"))
+    (!Array.isArray(value.tieCandidateIds) || !value.tieCandidateIds.every((candidateId) => typeof candidateId === "string"))
   ) {
     return false;
   }
@@ -160,9 +152,11 @@ export function loadSettings(): StoredSettings | null {
           ? parsed.lastCitizenRatio
           : undefined,
       lastLiarRatio:
-        typeof parsed.lastLiarRatio === "number" && Number.isInteger(parsed.lastLiarRatio)
-          ? parsed.lastLiarRatio
-          : undefined,
+        typeof parsed.lastLiarRatio === "number" && Number.isInteger(parsed.lastLiarRatio) ? parsed.lastLiarRatio : undefined,
+      customCategoryLabel: typeof parsed.customCategoryLabel === "string" ? parsed.customCategoryLabel : undefined,
+      customKeywords: Array.isArray(parsed.customKeywords)
+        ? parsed.customKeywords.filter((word): word is string => typeof word === "string")
+        : undefined,
     };
   } catch {
     return null;
@@ -189,11 +183,7 @@ export function loadSnapshot(): StoredSnapshot | null {
     }
 
     const parsed = JSON.parse(raw) as Partial<StoredSnapshot>;
-    if (
-      typeof parsed.savedAt !== "number" ||
-      !Number.isFinite(parsed.savedAt) ||
-      !isGameState(parsed.gameState)
-    ) {
+    if (typeof parsed.savedAt !== "number" || !Number.isFinite(parsed.savedAt) || !isGameState(parsed.gameState)) {
       return null;
     }
 

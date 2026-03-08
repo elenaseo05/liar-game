@@ -76,7 +76,16 @@ export function getCategoryById(categoryId: string) {
   return WORD_CATEGORY_MAP.get(categoryId);
 }
 
-export function pickWordByCategory(categoryId: string): string {
+export function pickWordByCategory(categoryId: string, customWords?: string[]): string {
+  if (categoryId === "custom") {
+    const words = (customWords ?? []).map((word) => word.trim()).filter(Boolean);
+    if (words.length === 0) {
+      throw new Error("직접 입력 카테고리의 키워드가 비어 있습니다.");
+    }
+
+    return pickOne(words);
+  }
+
   const category = getCategoryById(categoryId) ?? WORD_CATEGORIES[0];
   if (!category || category.words.length === 0) {
     throw new Error("사용 가능한 단어가 없습니다.");
@@ -137,6 +146,8 @@ export function createInitialRoundState(params: {
   players: Player[];
   categoryId: string;
   liarCount: number;
+  customCategoryLabel?: string;
+  customWords?: string[];
 }): GameState {
   const resolvedLiarCount = Math.min(
     Math.max(Math.trunc(params.liarCount), 1),
@@ -147,9 +158,11 @@ export function createInitialRoundState(params: {
     players: params.players,
     categoryId: params.categoryId,
     liarCount: resolvedLiarCount,
+    customCategoryLabel: params.customCategoryLabel,
+    customWords: params.customWords,
   };
 
-  const word = pickWordByCategory(params.categoryId);
+  const word = pickWordByCategory(params.categoryId, params.customWords);
   const assignments = createAssignments(params.players, word, resolvedLiarCount);
 
   return {
