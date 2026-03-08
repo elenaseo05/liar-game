@@ -47,7 +47,7 @@ type LiveConnection = {
 
 type LivePeer = {
   connect: (peerId: string, options?: { reliable?: boolean }) => LiveConnection;
-  on: (event: "open" | "connection", callback: (arg?: unknown) => void) => void;
+  on: (event: "open" | "connection" | "error", callback: (arg?: unknown) => void) => void;
   destroy: () => void;
 };
 
@@ -105,15 +105,25 @@ function parseKeywords(input: string): string[] {
 }
 
 function toBase64Url(value: string): string {
-  return btoa(unescape(encodeURIComponent(value))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function fromBase64Url(value: string): string {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "===".slice((normalized.length + 3) % 4);
-  return decodeURIComponent(escape(atob(padded)));
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
+  return new TextDecoder().decode(bytes);
 }
 
+let peerConstructorPromise: Promise<PeerConstructor> | null = null;
 
 async function loadPeerConstructor(): Promise<PeerConstructor> {
   const win = window as Window & { Peer?: PeerConstructor };
@@ -121,21 +131,29 @@ async function loadPeerConstructor(): Promise<PeerConstructor> {
     return win.Peer;
   }
 
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("peerjs script load failed"));
-    document.head.appendChild(script);
-  });
+  if (!peerConstructorPromise) {
+    peerConstructorPromise = new Promise<PeerConstructor>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js";
+      script.async = true;
+      script.onload = () => {
+        const loadedPeer = (window as Window & { Peer?: PeerConstructor }).Peer;
+        if (!loadedPeer) {
+          reject(new Error("Peer constructor not found"));
+          return;
+        }
 
-  const loadedPeer = (window as Window & { Peer?: PeerConstructor }).Peer;
-  if (!loadedPeer) {
-    throw new Error("Peer constructor not found");
+        resolve(loadedPeer);
+      };
+      script.onerror = () => reject(new Error("peerjs script load failed"));
+      document.head.appendChild(script);
+    }).catch((error) => {
+      peerConstructorPromise = null;
+      throw error;
+    });
   }
 
-  return loadedPeer;
+  return peerConstructorPromise;
 }
 
 function encodeInvite(payload: LiveInvitePayload): string {
@@ -234,6 +252,10 @@ export default function Home() {
           void (async () => {
             const Peer = await loadPeerConstructor();
             const peer = new Peer();
+            peer.on("error", () => {
+              setLiveError("실시간 연결에 실패했습니다. 링크를 다시 확인해주세요.");
+            });
+
             peer.on("open", () => {
               const conn = peer.connect(invite.hostId, { reliable: true });
               guestConnectionRef.current = conn;
@@ -267,14 +289,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const guestConnection = guestConnectionRef.current;
     const hostConnections = hostConnectionsRef.current;
-    const hostPeer = hostPeerRef.current;
 
     return () => {
-      guestConnection?.close();
+      guestConnectionRef.current?.close();
       hostConnections.forEach((connection) => connection.close());
-      hostPeer?.destroy();
+      hostPeerRef.current?.destroy();
     };
   }, []);
 
@@ -384,6 +404,10 @@ export default function Home() {
           }
         });
       };
+
+      peer.on("error", () => {
+        setLiveError("실시간 링크 연결을 준비하지 못했습니다. 다시 시도해주세요.");
+      });
 
       peer.on("connection", (arg) => {
         const connection = arg as LiveConnection;
