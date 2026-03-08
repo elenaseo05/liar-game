@@ -18,6 +18,8 @@ export interface RoundConfig {
   players: Player[];
   categoryId: string;
   liarCount: number;
+  customCategoryLabel?: string;
+  customWords?: string[];
 }
 
 export interface SecretAssignment {
