@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   buildPlayers,
   DEFAULT_CITIZEN_RATIO,
@@ -26,6 +26,32 @@ import {
 } from "@/lib/game/storage";
 import type { SecretAssignment } from "@/lib/game/types";
 import { WORD_CATEGORIES } from "@/lib/game/word-bank";
+
+type LiveInvitePayload = {
+  hostId: string;
+  expiresAt: number;
+  categoryId: string;
+  customCategoryLabel?: string;
+  customKeywords?: string[];
+};
+
+type PresenceMessage = { type: "join" | "ping" } | { type: "presence"; count: number };
+
+type LiveConnection = {
+  open: boolean;
+  connectionId: string;
+  on: (event: "open" | "data" | "close", callback: (message?: PresenceMessage) => void) => void;
+  send: (message: PresenceMessage) => void;
+  close: () => void;
+};
+
+type LivePeer = {
+  connect: (peerId: string, options?: { reliable?: boolean }) => LiveConnection;
+  on: (event: "open" | "connection", callback: (arg?: unknown) => void) => void;
+  destroy: () => void;
+};
+
+type PeerConstructor = new (id?: string) => LivePeer;
 
 const DEFAULT_DISCUSSION_SECONDS = 180;
 
@@ -67,21 +93,96 @@ function resolveDiscussionRemainingSeconds(startedAt: number | undefined): numbe
   return Math.max(0, DEFAULT_DISCUSSION_SECONDS - elapsedSeconds);
 }
 
+function parseKeywords(input: string): string[] {
+  return Array.from(
+    new Set(
+      input
+        .split(/[\n,]/g)
+        .map((keyword) => keyword.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function toBase64Url(value: string): string {
+  return btoa(unescape(encodeURIComponent(value))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function fromBase64Url(value: string): string {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "===".slice((normalized.length + 3) % 4);
+  return decodeURIComponent(escape(atob(padded)));
+}
+
+
+async function loadPeerConstructor(): Promise<PeerConstructor> {
+  const win = window as Window & { Peer?: PeerConstructor };
+  if (win.Peer) {
+    return win.Peer;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("peerjs script load failed"));
+    document.head.appendChild(script);
+  });
+
+  const loadedPeer = (window as Window & { Peer?: PeerConstructor }).Peer;
+  if (!loadedPeer) {
+    throw new Error("Peer constructor not found");
+  }
+
+  return loadedPeer;
+}
+
+function encodeInvite(payload: LiveInvitePayload): string {
+  return toBase64Url(JSON.stringify(payload));
+}
+
+function decodeInvite(token: string): LiveInvitePayload | null {
+  try {
+    const parsed = JSON.parse(fromBase64Url(token)) as LiveInvitePayload;
+    if (
+      typeof parsed.hostId !== "string" ||
+      typeof parsed.expiresAt !== "number" ||
+      typeof parsed.categoryId !== "string"
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export default function Home() {
   const [state, dispatch] = useReducer(gameReducer, initialGameState);
 
   const [hasBootstrapped, setHasBootstrapped] = useState(false);
   const [setupNames, setSetupNames] = useState<string[]>(["", "", ""]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(WORD_CATEGORIES[0].id);
+  const [customCategoryLabel, setCustomCategoryLabel] = useState("");
+  const [customKeywordsInput, setCustomKeywordsInput] = useState("");
   const [citizenRatio, setCitizenRatio] = useState(DEFAULT_CITIZEN_RATIO);
   const [liarRatio, setLiarRatio] = useState(DEFAULT_LIAR_RATIO);
   const [setupError, setSetupError] = useState<string | null>(null);
+
+  const [liveLink, setLiveLink] = useState("");
+  const [liveCount, setLiveCount] = useState(1);
+  const [liveError, setLiveError] = useState<string | null>(null);
 
   const [isSecretVisible, setIsSecretVisible] = useState(false);
   const [remainingDiscussionSeconds, setRemainingDiscussionSeconds] = useState(
     DEFAULT_DISCUSSION_SECONDS,
   );
   const [liarGuess, setLiarGuess] = useState("");
+
+  const hostPeerRef = useRef<LivePeer | null>(null);
+  const guestConnectionRef = useRef<LiveConnection | null>(null);
+  const hostConnectionsRef = useRef<Map<string, LiveConnection>>(new Map());
 
   useEffect(() => {
     const settings = loadSettings();
@@ -90,11 +191,19 @@ export default function Home() {
     const timerId = window.setTimeout(() => {
       if (settings) {
         setSetupNames(resolveSetupNames(settings.lastPlayerNames));
-        const hasCategory = WORD_CATEGORIES.some(
-          (category) => category.id === settings.lastCategoryId,
-        );
+        const hasCategory =
+          settings.lastCategoryId === "custom" ||
+          WORD_CATEGORIES.some((category) => category.id === settings.lastCategoryId);
         if (hasCategory) {
           setSelectedCategoryId(settings.lastCategoryId);
+        }
+
+        if (settings.customCategoryLabel) {
+          setCustomCategoryLabel(settings.customCategoryLabel);
+        }
+
+        if (settings.customKeywords && settings.customKeywords.length > 0) {
+          setCustomKeywordsInput(settings.customKeywords.join(", "));
         }
 
         const ratioError = validateRoleRatio(
@@ -111,11 +220,64 @@ export default function Home() {
         dispatch({ type: "HYDRATE", payload: snapshot.gameState });
       }
 
+      const token = new URL(window.location.href).searchParams.get("live");
+      if (token) {
+        const invite = decodeInvite(token);
+        if (!invite) {
+          setLiveError("유효하지 않은 실시간 링크입니다.");
+        } else if (invite.expiresAt <= Date.now()) {
+          setLiveError("이 실시간 링크는 만료되었습니다.");
+        } else {
+          setSelectedCategoryId(invite.categoryId);
+          setCustomCategoryLabel(invite.customCategoryLabel ?? "");
+          setCustomKeywordsInput((invite.customKeywords ?? []).join(", "));
+          void (async () => {
+            const Peer = await loadPeerConstructor();
+            const peer = new Peer();
+            peer.on("open", () => {
+              const conn = peer.connect(invite.hostId, { reliable: true });
+              guestConnectionRef.current = conn;
+              conn.on("open", () => {
+                conn.send({ type: "join" } satisfies PresenceMessage);
+              });
+              conn.on("data", (message) => {
+                if (!message) {
+                  return;
+                }
+                if (message.type === "presence") {
+                  setLiveCount(message.count);
+                }
+              });
+
+              const heartbeat = window.setInterval(() => {
+                conn.send({ type: "ping" } satisfies PresenceMessage);
+              }, 5000);
+
+              conn.on("close", () => window.clearInterval(heartbeat));
+            });
+            hostPeerRef.current = peer;
+          })();
+        }
+      }
+
       setHasBootstrapped(true);
     }, 0);
 
     return () => window.clearTimeout(timerId);
   }, []);
+
+  useEffect(() => {
+    const guestConnection = guestConnectionRef.current;
+    const hostConnections = hostConnectionsRef.current;
+    const hostPeer = hostPeerRef.current;
+
+    return () => {
+      guestConnection?.close();
+      hostConnections.forEach((connection) => connection.close());
+      hostPeer?.destroy();
+    };
+  }, []);
+
 
   useEffect(() => {
     if (!hasBootstrapped) {
@@ -163,6 +325,8 @@ export default function Home() {
     (assignment) => assignment.playerId === currentPlayer?.id,
   );
 
+  const customKeywords = useMemo(() => parseKeywords(customKeywordsInput), [customKeywordsInput]);
+
   const handleSetupNameChange = (index: number, value: string) => {
     setSetupNames((prev) => prev.map((name, i) => (i === index ? value : name)));
   };
@@ -185,6 +349,57 @@ export default function Home() {
     });
   };
 
+  const handleCreateLiveLink = async () => {
+    try {
+      setLiveError(null);
+      hostConnectionsRef.current.forEach((connection) => connection.close());
+      hostConnectionsRef.current.clear();
+      hostPeerRef.current?.destroy();
+
+      const Peer = await loadPeerConstructor();
+      const hostId = `host-${crypto.randomUUID()}`;
+      const peer = new Peer(hostId);
+      hostPeerRef.current = peer;
+
+      const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+      const token = encodeInvite({
+        hostId,
+        expiresAt,
+        categoryId: selectedCategoryId,
+        customCategoryLabel: selectedCategoryId === "custom" ? customCategoryLabel.trim() : undefined,
+        customKeywords: selectedCategoryId === "custom" ? customKeywords : undefined,
+      });
+
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("live", token);
+      setLiveLink(nextUrl.toString());
+      setLiveCount(1);
+
+      const broadcastPresence = () => {
+        const count = hostConnectionsRef.current.size + 1;
+        setLiveCount(count);
+        hostConnectionsRef.current.forEach((connection) => {
+          if (connection.open) {
+            connection.send({ type: "presence", count } satisfies PresenceMessage);
+          }
+        });
+      };
+
+      peer.on("connection", (arg) => {
+        const connection = arg as LiveConnection;
+        hostConnectionsRef.current.set(connection.connectionId, connection);
+        connection.on("open", broadcastPresence);
+        connection.on("data", () => broadcastPresence());
+        connection.on("close", () => {
+          hostConnectionsRef.current.delete(connection.connectionId);
+          broadcastPresence();
+        });
+      });
+    } catch {
+      setLiveError("실시간 링크를 만들지 못했습니다. 잠시 후 다시 시도해주세요.");
+    }
+  };
+
   const handleStartGame = () => {
     const normalizedNames = setupNames.map((name) => name.trim()).slice(0, MAX_PLAYERS);
     const ratioError = validateRoleRatio(citizenRatio, liarRatio);
@@ -200,6 +415,18 @@ export default function Home() {
       return;
     }
 
+    if (selectedCategoryId === "custom") {
+      if (!customCategoryLabel.trim()) {
+        setSetupError("직접 지정 카테고리 이름을 입력해주세요.");
+        return;
+      }
+
+      if (customKeywords.length < 3) {
+        setSetupError("직접 지정 키워드는 3개 이상 입력해주세요.");
+        return;
+      }
+    }
+
     const liarCount = resolveLiarCountByRatio(normalizedNames.length, citizenRatio, liarRatio);
     if (liarCount < 1 || liarCount >= normalizedNames.length) {
       setSetupError("현재 인원으로는 유효한 시민:라이어 비율을 만들 수 없습니다.");
@@ -213,6 +440,8 @@ export default function Home() {
       lastCategoryId: selectedCategoryId,
       lastCitizenRatio: citizenRatio,
       lastLiarRatio: liarRatio,
+      customCategoryLabel: customCategoryLabel.trim() || undefined,
+      customKeywords,
     });
 
     dispatch({
@@ -221,6 +450,8 @@ export default function Home() {
         players: playersForRound,
         categoryId: selectedCategoryId,
         liarCount,
+        customCategoryLabel: selectedCategoryId === "custom" ? customCategoryLabel.trim() : undefined,
+        customWords: selectedCategoryId === "custom" ? customKeywords : undefined,
       },
     });
 
@@ -238,9 +469,25 @@ export default function Home() {
   const renderSetup = () => (
     <section className="panel">
       <h1 className="title">Liar Game</h1>
-      <p className="subtitle">한 기기 패스앤플레이로 라이어를 찾아보세요.</p>
+      <p className="subtitle">한 기기 패스앤플레이 + 실시간 링크로 라이어를 찾아보세요.</p>
 
-      <div className="stack-md">
+      <div className="stack-md top-space-lg">
+        <h2>실시간 링크 (24시간 유효)</h2>
+        <p className="muted-text">서버/DB 없이 P2P 연결로 접속 인원을 실시간으로 공유합니다.</p>
+        <button type="button" className="btn-secondary" onClick={handleCreateLiveLink}>
+          실시간 링크 생성
+        </button>
+        {liveLink ? (
+          <label className="stack-xs">
+            <span className="field-label">공유 링크</span>
+            <input className="input" readOnly value={liveLink} onFocus={(event) => event.currentTarget.select()} />
+          </label>
+        ) : null}
+        <p className="muted-text">현재 접속: {liveCount}명</p>
+        {liveError ? <p className="error-text">{liveError}</p> : null}
+      </div>
+
+      <div className="stack-md top-space-lg">
         <div className="section-title-row">
           <h2>플레이어 등록</h2>
           <div className="row-gap-sm">
@@ -290,8 +537,34 @@ export default function Home() {
                 {category.label}
               </option>
             ))}
+            <option value="custom">직접 지정</option>
           </select>
         </label>
+
+        {selectedCategoryId === "custom" ? (
+          <>
+            <label className="stack-xs">
+              <span className="field-label">카테고리 이름</span>
+              <input
+                className="input"
+                value={customCategoryLabel}
+                onChange={(event) => setCustomCategoryLabel(event.target.value)}
+                placeholder="예: 여행지"
+                maxLength={24}
+              />
+            </label>
+            <label className="stack-xs">
+              <span className="field-label">키워드 (쉼표/줄바꿈으로 구분)</span>
+              <textarea
+                className="input"
+                value={customKeywordsInput}
+                onChange={(event) => setCustomKeywordsInput(event.target.value)}
+                placeholder="파리, 도쿄, 서울"
+                rows={4}
+              />
+            </label>
+          </>
+        ) : null}
 
         <label className="stack-xs">
           <span className="field-label">시민:라이어 비율</span>

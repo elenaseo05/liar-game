@@ -17,6 +17,8 @@ export type GameAction =
         players: Player[];
         categoryId: string;
         liarCount: number;
+        customCategoryLabel?: string;
+        customWords?: string[];
       };
     }
   | { type: "NEXT_ROLE_REVEAL" }
@@ -164,6 +166,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         players: action.payload.players,
         categoryId: action.payload.categoryId,
         liarCount: action.payload.liarCount,
+        customCategoryLabel: action.payload.customCategoryLabel,
+        customWords: action.payload.customWords,
       });
     }
     case "NEXT_ROLE_REVEAL": {
@@ -280,6 +284,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         players: state.config.players,
         categoryId: state.config.categoryId,
         liarCount: state.config.liarCount,
+        customCategoryLabel: state.config.customCategoryLabel,
+        customWords: state.config.customWords,
       });
     }
     case "RESET_TO_SETUP": {
